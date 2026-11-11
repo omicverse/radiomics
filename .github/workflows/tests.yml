@@ -1,0 +1,39 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[test]'
+      - run: python -m pytest -q
+        env:
+          MPLBACKEND: Agg
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: python -m pip install 'numpy<2' 'setuptools<81' wheel SimpleITK PyWavelets pykwalify
+      - run: python -m pip install --no-build-isolation 'pyradiomics==3.0.1'
+      - run: python -m pip install -e '.[test,boost]'
+      - run: python -m pytest -q
+        env:
+          MPLBACKEND: Agg
+      - run: python examples/demo.py --output artifacts/demo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-demo
+          path: |
+            artifacts/demo/*.csv
+            artifacts/demo/*.png
+            artifacts/demo/provenance.json
