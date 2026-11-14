@@ -9,7 +9,7 @@ groups = {
     'Feature processing':['FeatureSelector'],
     'Clinical statistics':['baseline_table','univariate_logistic','multivariable_logistic'],
     'Training and probability fusion':['split_data','make_classifier','train_models','fusion_data','fit_fusion','evaluate'],
-    'Evaluation':['binary_metrics','delong_test','decision_curve','hosmer_lemeshow'],
+    'Evaluation':['backend_info','binary_metrics','delong_test','decision_curve','hosmer_lemeshow'],
     'Figures':[name for name in vars(rad) if name.startswith('plot_')],
 }
 text = '''# API reference
@@ -36,6 +36,7 @@ Import all functions with `import ov_radiomics as rad`. Signatures below are gen
 - `fusion_data` strictly aligns patients, outcomes and OOF fold IDs. It currently requires `ID` as the ID column. Use the same CV seed, folds and row order for both components.
 - `fit_fusion` accepts marked OOF predictions and trains LR on those score columns. The caller is responsible for truthful provenance when supplying custom tables. `.predict_proba()` needs only the named probability columns.
 - `binary_metrics`: one 1D positive-class probability vector. Threshold is explicit and never optimized on the supplied outcomes. CI methods: `delong`, stratified `bootstrap`, or `None`. Bootstrap is patient-level only under this workflow's independent-row assumption.
+- Metric functions and `evaluate` accept `backend="auto"`, `"rust"`, or `"python"`. Auto uses a compiled extension when available; an absent extension permits Python fallback. A broken DLL does not. `backend_info()` reports the selected default. Distribution functions, quantile grouping and bootstrap random draws remain Python for reproducibility.
 - `delong_test` returns ordinary two-sided `p_value` and `z`. Identical scores return p=1; a nonzero difference with zero estimated variance returns p=0. DeLong needs at least two observations per class.
 - `decision_curve`: thresholds strictly inside (0,1); includes treat-all and treat-none baselines. No prevalence correction for case-control sampling is performed.
 - `hosmer_lemeshow`: quantile groups with duplicate boundaries removed, df = actual groups - 2. Undefined groups raise errors.

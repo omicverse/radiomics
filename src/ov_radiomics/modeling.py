@@ -189,14 +189,14 @@ def train_models(data, target, features, split='group', models=('LR',), selector
     return TrainingResult(fitted, pd.DataFrame(cv_rows), pd.DataFrame(oof_rows), pd.DataFrame(prediction_rows), features, config)
 
 
-def evaluate(predictions, threshold=0.5, ci_method='delong', confidence=0.95):
+def evaluate(predictions, threshold=0.5, ci_method='delong', confidence=0.95, backend='auto'):
     """Summarize standardized long predictions by model and cohort."""
     frame = predictions.predictions if isinstance(predictions, TrainingResult) else predictions
     groups = ['model'] + (['group'] if 'group' in frame else [])
     rows = []
     for keys, subset in frame.groupby(groups):
         keys = keys if isinstance(keys, tuple) else (keys,)
-        result = binary_metrics(subset.y_true, subset.probability, threshold=threshold, ci_method=ci_method, confidence=confidence).to_dict()
+        result = binary_metrics(subset.y_true, subset.probability, threshold=threshold, ci_method=ci_method, confidence=confidence, backend=backend).to_dict()
         result.update(dict(zip(groups, keys)))
         rows.append(result)
     return pd.DataFrame(rows)

@@ -1,0 +1,17 @@
+[package]
+name = "ov-radiomics-python"
+description = "PyO3 bindings for the independent ov-radiomics numerical core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+ov-radiomics-core = { path = "../radiomics-core" }
+pyo3 = { version = "0.30.1", features = ["abi3-py39", "extension-module"] }

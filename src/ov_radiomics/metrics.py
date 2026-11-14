@@ -5,6 +5,7 @@ from scipy.stats import norm, chi2
 from sklearn.metrics import (roc_auc_score, confusion_matrix, precision_score, recall_score,
                             f1_score, accuracy_score, brier_score_loss)
 from ._validation import probabilities
+from ._backend import resolve_backend
 
 
 def _delong_components(y, scores):
@@ -20,14 +21,24 @@ def _delong_components(y, scores):
 
 
 def binary_metrics(y_true, y_score, threshold=0.5, positive_label=1, ci_method='delong',
-                   confidence=0.95, n_bootstrap=2000, random_state=0):
+                   confidence=0.95, n_bootstrap=2000, random_state=0, backend='auto'):
+    """Return the existing metric Series; backend is auto, rust, or python.
+
+    Bootstrap draws retain the NumPy RandomState sequence for cross-backend parity.
+    Normal quantiles remain SciPy calculations; Rust supplies numerical kernels.
+    """
     y, p = probabilities(y_true, y_score, positive_label)
     if not 0 <= threshold <= 1 or not 0 < confidence < 1:
         raise ValueError('Invalid threshold or confidence.')
-    auc = roc_auc_score(y, p)
+    native = resolve_backend(backend)
+    native_summary = native.binary_summary(y.tolist(), p.tolist(), float(threshold)) if native else None
+    auc = native_summary[0] if native_summary else roc_auc_score(y, p)
     if ci_method == 'delong':
-        v10, v01 = _delong_components(y, p)
-        variance = np.var(v10, ddof=1)/len(v10) + np.var(v01, ddof=1)/len(v01)
+        if native:
+            _, variance = native.delong_summary(y.tolist(), p.tolist())
+        else:
+            v10, v01 = _delong_components(y, p)
+            variance = np.var(v10, ddof=1)/len(v10) + np.var(v01, ddof=1)/len(v01)
         delta = norm.ppf((1+confidence)/2) * np.sqrt(max(variance, 0))
         low, high = max(0, auc-delta), min(1, auc+delta)
     elif ci_method == 'bootstrap':
@@ -39,37 +50,53 @@ def binary_metrics(y_true, y_score, threshold=0.5, positive_label=1, ci_method='
         estimates = []
         for _ in range(n_bootstrap):
             idx = np.r_[rng.choice(positives, len(positives)), rng.choice(negatives, len(negatives))]
-            estimates.append(roc_auc_score(y[idx], p[idx]))
+            estimates.append(native.auc(y[idx].tolist(), p[idx].tolist()) if native else roc_auc_score(y[idx], p[idx]))
         low, high = np.quantile(estimates, [(1-confidence)/2, (1+confidence)/2])
     elif ci_method is None:
         low, high = np.nan, np.nan
     else:
         raise ValueError('ci_method must be delong, bootstrap, or None.')
-    predicted = p >= threshold
-    tn, fp, fn, tp = confusion_matrix(y, predicted, labels=[0, 1]).ravel()
     safe = lambda numerator, denominator: numerator/denominator if denominator else np.nan
-    return pd.Series({'n': len(y), 'positive_n': int(y.sum()), 'accuracy': accuracy_score(y, predicted),
+    if native_summary:
+        _, tn, fp, fn, tp, brier = native_summary
+        accuracy = (tn+tp)/len(y)
+        precision = tp/(tp+fp) if tp+fp else 0.0
+        recall = tp/(tp+fn) if tp+fn else 0.0
+        f1 = 2*tp/(2*tp+fp+fn) if 2*tp+fp+fn else 0.0
+    else:
+        predicted = p >= threshold
+        tn, fp, fn, tp = confusion_matrix(y, predicted, labels=[0, 1]).ravel()
+        accuracy = accuracy_score(y, predicted)
+        precision = precision_score(y, predicted, zero_division=0)
+        recall = recall_score(y, predicted, zero_division=0)
+        f1 = f1_score(y, predicted, zero_division=0)
+        brier = brier_score_loss(y, p)
+    return pd.Series({'n': len(y), 'positive_n': int(y.sum()), 'accuracy': accuracy,
         'auc': auc, 'ci_low': low, 'ci_high': high, 'sensitivity': safe(tp, tp+fn),
         'specificity': safe(tn, tn+fp), 'ppv': safe(tp, tp+fp), 'npv': safe(tn, tn+fn),
-        'precision': precision_score(y, predicted, zero_division=0),
-        'recall': recall_score(y, predicted, zero_division=0), 'f1': f1_score(y, predicted, zero_division=0),
-        'brier': brier_score_loss(y, p), 'threshold': threshold})
+        'precision': precision, 'recall': recall, 'f1': f1,
+        'brier': brier, 'threshold': threshold})
 
 
-def delong_test(y_true, score_a, score_b, positive_label=1):
+def delong_test(y_true, score_a, score_b, positive_label=1, backend='auto'):
     """Two-sided paired test; rows must refer to the same independent subjects."""
     y, a = probabilities(y_true, score_a, positive_label)
     _, b = probabilities(y_true, score_b, positive_label)
-    a10, a01 = _delong_components(y, a)
-    b10, b01 = _delong_components(y, b)
-    variance = np.var(a10-b10, ddof=1)/len(a10) + np.var(a01-b01, ddof=1)/len(a01)
-    difference = float(a10.mean()-b10.mean())
+    native = resolve_backend(backend)
+    if native:
+        auc_a, auc_b, variance = native.paired_delong_summary(y.tolist(), a.tolist(), b.tolist())
+    else:
+        a10, a01 = _delong_components(y, a)
+        b10, b01 = _delong_components(y, b)
+        variance = np.var(a10-b10, ddof=1)/len(a10) + np.var(a01-b01, ddof=1)/len(a01)
+        auc_a, auc_b = a10.mean(), b10.mean()
+    difference = float(auc_a-auc_b)
     z = difference/np.sqrt(variance) if variance > 0 else (0.0 if difference == 0 else np.sign(difference)*np.inf)
-    return pd.Series({'auc_a': a10.mean(), 'auc_b': b10.mean(), 'difference': difference,
+    return pd.Series({'auc_a': auc_a, 'auc_b': auc_b, 'difference': difference,
                       'z': z, 'p_value': 2*norm.sf(abs(z))})
 
 
-def decision_curve(y_true, scores, thresholds=None, positive_label=1):
+def decision_curve(y_true, scores, thresholds=None, positive_label=1, backend='auto'):
     if not isinstance(scores, (dict, pd.DataFrame)):
         scores = {'Model': scores}
     thresholds = np.asarray(np.linspace(0.01, 0.99, 99) if thresholds is None else thresholds)
@@ -78,19 +105,24 @@ def decision_curve(y_true, scores, thresholds=None, positive_label=1):
     if len(scores) == 0 or set(scores) & {'Treat all', 'Treat none'}:
         raise ValueError('Supply models with non-reserved names.')
     rows = []
+    native = resolve_backend(backend)
     for name in scores:
         y, p = probabilities(y_true, scores[name], positive_label)
-        for t in thresholds:
-            treated = p >= t
-            benefit = ((treated & (y == 1)).sum() - (treated & (y == 0)).sum()*t/(1-t))/len(y)
-            rows.append((name, t, benefit))
+        if native:
+            benefits = native.net_benefit(y.tolist(), p.tolist(), thresholds.tolist())
+            rows.extend((name, t, benefit) for t, benefit in zip(thresholds, benefits))
+        else:
+            for t in thresholds:
+                treated = p >= t
+                benefit = ((treated & (y == 1)).sum() - (treated & (y == 0)).sum()*t/(1-t))/len(y)
+                rows.append((name, t, benefit))
     prevalence = y.mean()
     for t in thresholds:
         rows.extend([('Treat all', t, prevalence-(1-prevalence)*t/(1-t)), ('Treat none', t, 0)])
     return pd.DataFrame(rows, columns=['model', 'threshold', 'net_benefit'])
 
 
-def hosmer_lemeshow(y_true, y_score, n_bins=10, positive_label=1):
+def hosmer_lemeshow(y_true, y_score, n_bins=10, positive_label=1, backend='auto'):
     y, p = probabilities(y_true, y_score, positive_label)
     if n_bins < 3:
         raise ValueError('At least three requested bins are required.')
@@ -102,6 +134,8 @@ def hosmer_lemeshow(y_true, y_score, n_bins=10, positive_label=1):
     denominator = grouped.expected * (1-grouped.expected/grouped.n)
     if (denominator <= 0).any():
         raise ValueError('H-L is undefined for bins with expected probability 0 or 1.')
-    statistic = float(((grouped.observed-grouped.expected)**2/denominator).sum())
+    native = resolve_backend(backend)
+    statistic = (native.hl_statistic(grouped.n.tolist(), grouped.observed.tolist(), grouped.expected.tolist())
+                 if native else float(((grouped.observed-grouped.expected)**2/denominator).sum()))
     df = len(grouped)-2
     return {'statistic': statistic, 'df': df, 'p_value': float(chi2.sf(statistic, df)), 'table': grouped}

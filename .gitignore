@@ -8,3 +8,8 @@ dist/
 .ipynb_checkpoints/
 examples/output/
 artifacts/
+.build-tools/
+target/
+*.pyd
+*.pdb
+*.so

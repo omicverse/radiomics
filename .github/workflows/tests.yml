@@ -1,20 +1,67 @@
 name: tests
 on: [push, pull_request]
 jobs:
-  core:
+  rust:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo test -p ov-radiomics-core --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+  core:
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python: ['3.10', '3.12']
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.9'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install -e '.[test]'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install 'maturin>=1.9,<2' pytest nbformat nbclient ipykernel
+      - run: python -m maturin build --release --locked --out dist
+      - shell: bash
+        run: python -m pip install dist/*.whl
+      - run: python -c "import ov_radiomics as rad; assert rad.backend_info()['metrics_backend'] == 'rust'"
+      - run: python -m pytest -q --import-mode=importlib -o pythonpath=
+        env:
+          MPLBACKEND: Agg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.python }}
+          path: dist/*.whl
+  python-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies without compiling the extension
+        run: |
+          python - <<'PY'
+          import subprocess, sys, tomllib
+          with open('pyproject.toml', 'rb') as handle:
+              project = tomllib.load(handle)['project']
+          subprocess.check_call([sys.executable, '-m', 'pip', 'install', *project['dependencies'], *project['optional-dependencies']['test']])
+          PY
+      - run: python -c "import ov_radiomics as rad; assert rad.backend_info()['metrics_backend'] == 'python'"
+        env:
+          PYTHONPATH: src
       - run: python -m pytest -q
         env:
           MPLBACKEND: Agg
+          PYTHONPATH: src
   images:
     runs-on: ubuntu-latest
     steps:
@@ -22,9 +69,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - uses: dtolnay/rust-toolchain@stable
       - run: python -m pip install 'numpy<2' 'setuptools<81' wheel SimpleITK PyWavelets pykwalify
       - run: python -m pip install --no-build-isolation 'pyradiomics==3.0.1'
       - run: python -m pip install -e '.[test,boost]'
+      - run: python -c "import ov_radiomics as rad; assert rad.backend_info()['metrics_backend'] == 'rust'"
       - run: python -m pytest -q
         env:
           MPLBACKEND: Agg

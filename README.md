@@ -1,6 +1,6 @@
 # ov-radiomics
 
-An independent radiomics package for the OmicVerse ecosystem: medical images and ROI masks → radiomics models → clinical models → probability fusion and evaluation.
+An independent Python package with a Rust numerical core for the OmicVerse ecosystem: medical images and ROI masks → radiomics models → clinical models → probability fusion and evaluation.
 
 **Initial scope:** a single-center binary classification study with one row per independent patient. The repository includes real PyRadiomics extraction, train-fitted feature selection, eight classifier adapters, clinical statistics, logistic probability fusion, and publication-oriented plots. It does not contain patient data or depend on Onekey.
 
@@ -9,12 +9,31 @@ An independent radiomics package for the OmicVerse ecosystem: medical images and
 From a checkout:
 
 ```bash
+# Source builds require Rust >= 1.85 plus a platform C/C++ linker.
+# A prebuilt wheel does not require Rust on the user's machine.
 python -m pip install -e ".[image,test]"
 # Optional classifier backends:
 python -m pip install -e ".[boost]"
 ```
 
 The distribution is named **ov-radiomics** and the import is **ov_radiomics**, avoiding a collision with PyRadiomics's `radiomics` import. No PyPI release is implied by this repository.
+
+The Rust core and Python bindings live in `crates/radiomics-core` and `crates/radiomics-python`. Maturin builds an ABI3 extension for CPython 3.9+; CI tests compiled wheels on Windows and Linux. Development wheels are available as CI artifacts, not a promised PyPI release.
+
+## Rust migration: first stage
+
+Binary AUC/confusion counts/Brier score, DeLong placement variance, DCA net benefit, and the grouped H–L statistic now have Rust kernels. Python retains the API, DataFrames, distribution functions, bootstrap random draws and H–L quantile grouping. PyRadiomics extraction, sklearn modeling, clinical inference and plotting remain Python/library integrations.
+
+```python
+import ov_radiomics as rad
+print(rad.backend_info())
+metrics = rad.binary_metrics(y_true, y_score, backend="rust")
+reference = rad.binary_metrics(y_true, y_score, backend="python")
+```
+
+The default `backend="auto"` uses the compiled extension when present, or the Python reference when running an unbuilt source checkout. A broken extension raises its import error rather than silently falling back. `backend="rust"` requires the extension. There are no environment switches or global backend options.
+
+See [Rust architecture, build instructions and parity tests](docs/rust.md). This is an incremental migration, **not a complete Rust reimplementation of radiomics extraction or machine learning**.
 
 The core package does not import SimpleITK/PyRadiomics until image functionality is requested. PyRadiomics has compiled dependencies; the initial local validation used Python 3.9, NumPy 1.23, sklearn 1.0.2 and PyRadiomics 3.1.0. Consult CI and `docs/validation.md` for actually tested combinations. Installation on other Python/NumPy versions is not guaranteed by the minimum dependency declarations.
 

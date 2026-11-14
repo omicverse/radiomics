@@ -1,5 +1,6 @@
 """Execute the four tutorials in isolated output, using the current Python kernel."""
 from pathlib import Path
+import argparse
 import sys
 import nbformat
 from nbclient import NotebookClient
@@ -14,14 +15,18 @@ class CurrentPythonKernel(KernelSpecManager):
                           display_name='Validation Python', language='python')
 
 
-destination = ROOT/'artifacts'/'executed_notebooks'
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-root', default=str(ROOT/'artifacts'))
+args = parser.parse_args()
+execution_root = Path(args.output_root).resolve()
+destination = execution_root/'executed_notebooks'
 destination.mkdir(parents=True, exist_ok=True)
 for file in sorted((ROOT/'examples').glob('0*.ipynb')):
     notebook = nbformat.read(file,as_version=4)
     # Keep tutorial defaults intact; isolate execution artifacts under ignored artifacts/.
     for cell in notebook.cells:
         if cell.cell_type == 'code':
-            cell.source = cell.source.replace('Path("output/notebook_demo")', 'Path("../artifacts/notebook_demo")')
+            cell.source = cell.source.replace('Path("output/notebook_demo")', f'Path({str(execution_root / "notebook_demo")!r})')
     client = NotebookClient(notebook, timeout=180, kernel_name='python3',
         resources={'metadata':{'path':str(ROOT/'examples')}})
     from jupyter_client import KernelManager

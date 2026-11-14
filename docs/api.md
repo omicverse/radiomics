@@ -22,6 +22,7 @@ Import all functions with `import ov_radiomics as rad`. Signatures below are gen
 - `fusion_data` strictly aligns patients, outcomes and OOF fold IDs. It currently requires `ID` as the ID column. Use the same CV seed, folds and row order for both components.
 - `fit_fusion` accepts marked OOF predictions and trains LR on those score columns. The caller is responsible for truthful provenance when supplying custom tables. `.predict_proba()` needs only the named probability columns.
 - `binary_metrics`: one 1D positive-class probability vector. Threshold is explicit and never optimized on the supplied outcomes. CI methods: `delong`, stratified `bootstrap`, or `None`. Bootstrap is patient-level only under this workflow's independent-row assumption.
+- Metric functions and `evaluate` accept `backend="auto"`, `"rust"`, or `"python"`. Auto uses a compiled extension when available; an absent extension permits Python fallback. A broken DLL does not. `backend_info()` reports the selected default. Distribution functions, quantile grouping and bootstrap random draws remain Python for reproducibility.
 - `delong_test` returns ordinary two-sided `p_value` and `z`. Identical scores return p=1; a nonzero difference with zero estimated variance returns p=0. DeLong needs at least two observations per class.
 - `decision_curve`: thresholds strictly inside (0,1); includes treat-all and treat-none baselines. No prevalence correction for case-control sampling is performed.
 - `hosmer_lemeshow`: quantile groups with duplicate boundaries removed, df = actual groups - 2. Undefined groups raise errors.
@@ -177,7 +178,7 @@ Fit logistic probability fusion from OOF base predictions, never holdout labels.
 ### `evaluate`
 
 ```python
-evaluate(predictions, threshold=0.5, ci_method='delong', confidence=0.95)
+evaluate(predictions, threshold=0.5, ci_method='delong', confidence=0.95, backend='auto')
 ```
 
 Summarize standardized long predictions by model and cohort.
@@ -185,16 +186,29 @@ Summarize standardized long predictions by model and cohort.
 
 ## Evaluation
 
+### `backend_info`
+
+```python
+backend_info()
+```
+
+Report the actual default metric backend; does not change process-wide settings.
+
 ### `binary_metrics`
 
 ```python
-binary_metrics(y_true, y_score, threshold=0.5, positive_label=1, ci_method='delong', confidence=0.95, n_bootstrap=2000, random_state=0)
+binary_metrics(y_true, y_score, threshold=0.5, positive_label=1, ci_method='delong', confidence=0.95, n_bootstrap=2000, random_state=0, backend='auto')
 ```
+
+Return the existing metric Series; backend is auto, rust, or python.
+
+Bootstrap draws retain the NumPy RandomState sequence for cross-backend parity.
+Normal quantiles remain SciPy calculations; Rust supplies numerical kernels.
 
 ### `delong_test`
 
 ```python
-delong_test(y_true, score_a, score_b, positive_label=1)
+delong_test(y_true, score_a, score_b, positive_label=1, backend='auto')
 ```
 
 Two-sided paired test; rows must refer to the same independent subjects.
@@ -202,13 +216,13 @@ Two-sided paired test; rows must refer to the same independent subjects.
 ### `decision_curve`
 
 ```python
-decision_curve(y_true, scores, thresholds=None, positive_label=1)
+decision_curve(y_true, scores, thresholds=None, positive_label=1, backend='auto')
 ```
 
 ### `hosmer_lemeshow`
 
 ```python
-hosmer_lemeshow(y_true, y_score, n_bins=10, positive_label=1)
+hosmer_lemeshow(y_true, y_score, n_bins=10, positive_label=1, backend='auto')
 ```
 
 

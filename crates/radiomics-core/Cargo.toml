@@ -1,0 +1,8 @@
+[package]
+name = "ov-radiomics-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Independent Rust numerical kernels for binary radiomics model evaluation"

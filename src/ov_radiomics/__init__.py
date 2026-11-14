@@ -6,6 +6,7 @@ from .modeling import (split_data, make_classifier, train_models, evaluate, fusi
                        fit_fusion, TrainingResult, FusionResult)
 from .metrics import binary_metrics, delong_test, decision_curve, hosmer_lemeshow
 from ._validation import join_data
+from ._backend import backend_info
 from .plotting import (plot_roc, plot_calibration, plot_dca, plot_confusion_matrix,
     plot_prediction_scores, plot_correlation, plot_lasso_path, plot_lasso_cv,
     plot_feature_weights, plot_cv_results, plot_metrics, plot_feature_summary,

@@ -18,3 +18,5 @@ Public algorithm references:
 - [scikit-learn: stacking and cross-validated predictions](https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.StackingClassifier.html)
 
 Synthetic image and clinical-data generators are provided in `examples/demo.py`. Generated AUCs or p-values are software validation artifacts and have no clinical interpretation.
+
+The first Rust migration ports numerical metrics from this repository's own Python implementation and statistical definitions. The Rust crate is tested against the existing Python reference and independent numerical fixtures. It does not port protected third-party source or replace the external feature extraction and modeling engines.
